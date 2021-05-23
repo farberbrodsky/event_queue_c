@@ -14,18 +14,18 @@ typedef struct {
     char state;             // '\0' at start, 'W' when joiner was waiting, 'D' when done early and 'T' detached
 } EventQueue_JoinHandle;
 
-struct _eventQueue_Event {
+struct EventQueue_Event_internal {
     EventQueue_JoinHandle *join;  // may be NULL if joining isn't required
     void *data;
-    struct _eventQueue_Event *next;
+    struct EventQueue_Event_internal *next;
 };
 
 typedef struct {
     pthread_cond_t new_event_ready;  // fired when there's an event to be pushed and someone's locking for a new event
     pthread_mutex_t event_lock;      // locked to set an event or pop an event
 
-    _eventQueue_Event *head;
-    _eventQueue_Event *tail;
+    struct EventQueue_Event_internal *head;
+    struct EventQueue_Event_internal *tail;
 } EventQueue;
 
 // Create a new EventQueue
