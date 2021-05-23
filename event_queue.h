@@ -1,17 +1,17 @@
 #ifndef GUARD_724b255a_2d89_4e5b_8537_e04103a75485
 #define GUARD_724b255a_2d89_4e5b_8537_e04103a75485
+#include <stdlib.h>
 #include <pthread.h>
 #include <stdbool.h>
 
 // Implementation details: the cond is fired by the consumer when it's done,
 // and if the adder is waiting, and the done flag isn't set, it will unlock the mutex and be done.
-// Regardless, the consumer always locks the mutex to set the done flag.
-// Usually, the adder is responsible for cleaning, but if detaching,
-// the adder sets the done flag to true, and then the consumer is responsible for cleaning.
+// Regardless, the consumer always locks the mutex to change the state.
+// Usually, the consumer is responsible for cleaning, but if the consumer is done early, the joiner cleans up
 typedef struct {
     pthread_cond_t cond;    // fired by consumer when done
     pthread_mutex_t mutex;  // locked by adder when joining, and locked by consumer to set the done flag
-    bool done;              // done
+    char state;             // '\0' at start, 'W' when joiner was waiting, 'D' when done early and 'T' detached
 } EventQueue_JoinHandle;
 
 struct _eventQueue_Event {
@@ -52,7 +52,7 @@ typedef struct {
     EventQueue_JoinHandle *join;  // may be NULL if nobody's expecting to join
 } EventQueue_Consumer;
 
-EventQueue_Consumer EventQueue_new_consumer(EventQueue *eq);
+EventQueue_Consumer *EventQueue_new_consumer(EventQueue *eq);
 // Take the first event from an EventQueue and get the data, and tell joining adders that you're done.
 void *EventQueue_consume(EventQueue_Consumer *consumer);
 // Destroy the consumer, and tell any joining adders than you're done.
