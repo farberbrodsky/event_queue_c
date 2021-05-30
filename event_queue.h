@@ -17,13 +17,13 @@ typedef struct {
 struct EventQueue_Event_internal {
     EventQueue_JoinHandle *join;  // may be NULL if joining isn't required
     void *data;
-    char special;  // '\0' for not special, 'K' for kill
     struct EventQueue_Event_internal *next;
 };
 
 typedef struct {
     pthread_cond_t new_event_ready;  // fired when there's an event to be pushed and someone's locking for a new event
     pthread_mutex_t event_lock;      // locked to set an event or pop an event
+    bool kill;                       // when true tell all the threads to die
 
     struct EventQueue_Event_internal *head;
     struct EventQueue_Event_internal *tail;

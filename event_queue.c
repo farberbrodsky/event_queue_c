@@ -8,10 +8,13 @@ EventQueue *EventQueue_new() {
 }
 
 void EventQueue_free(EventQueue *eq) {
-    printf("Destroying cond..\n");
+    pthread_cond_signal(&eq->new_event_ready);
+    pthread_mutex_lock(&eq->event_lock);  // lock the event queue to tell everyone to die
+    eq->kill = true;
+    pthread_mutex_unlock(&eq->event_lock);
     pthread_cond_destroy(&eq->new_event_ready);  // TODO ERROR HERE!!!!
-    printf("Destroying mutex..\n");
     pthread_mutex_destroy(&eq->event_lock);
+    free(eq);
 }
 
 static void EventQueue_add_mayjoin(EventQueue *eq, struct EventQueue_Event_internal *event) {
@@ -46,6 +49,7 @@ EventQueue_JoinHandle *EventQueue_add_joinable(EventQueue *eq, void *data) {
     event->join = join;
     event->data = data;
     EventQueue_add_mayjoin(eq, event);
+    return join;
 }
 
 static void EventQueue_JoinHandle_cleanup(EventQueue_JoinHandle *handle) {
@@ -65,12 +69,13 @@ void EventQueue_join(EventQueue_JoinHandle *handle) {
         handle->state = 'W';
         pthread_cond_wait(&handle->cond, &handle->mutex);
         pthread_mutex_unlock(&handle->mutex);
+        EventQueue_JoinHandle_cleanup(handle);
     }
 }
 
 static void EventQueue_event_done(EventQueue_JoinHandle *handle) {
-    pthread_cond_signal(&handle->cond);  // fire this if the adder is waiting
     pthread_mutex_lock(&handle->mutex);
+    pthread_cond_signal(&handle->cond);  // fire this if the adder is waiting
     if (handle->state == 'T') {
         // detached, I have to clean this
         pthread_mutex_unlock(&handle->mutex);
@@ -78,7 +83,6 @@ static void EventQueue_event_done(EventQueue_JoinHandle *handle) {
     } else if (handle->state == 'W') {
         // joiner has been waiting but isn't anymore due to signal, I will clean this
         pthread_mutex_unlock(&handle->mutex);
-        EventQueue_JoinHandle_cleanup(handle);
     } else {// handle->state == '\0'
         // tell the adder I'm done early
         handle->state = 'D';
@@ -90,6 +94,7 @@ void EventQueue_detach(EventQueue_JoinHandle *handle) {
     pthread_mutex_lock(&handle->mutex);
     handle->state = 'T';
     pthread_mutex_unlock(&handle->mutex);
+    free(handle);
 }
 
 EventQueue_Consumer *EventQueue_new_consumer(EventQueue *eq) {
@@ -107,21 +112,31 @@ char EventQueue_consume(EventQueue_Consumer *consumer, void **data) {
     EventQueue *eq = consumer->eq;
     // actually consume an event
     pthread_mutex_lock(&eq->event_lock);    // lock the event queue to wait for an event
+    if (eq->kill) {
+        // got a kill signal. die.
+        pthread_mutex_unlock(&eq->event_lock);
+        return 'K';
+    }
     // if there's an event, take it now
     while (eq->head == NULL) {
         // wait for a new event
         pthread_cond_wait(&eq->new_event_ready, &eq->event_lock);
+        if (eq->kill) {
+            // got a kill signal. die.
+            pthread_mutex_unlock(&eq->event_lock);
+            return 'K';
+        }
     }
     // the event is eq->head
     struct EventQueue_Event_internal *event = eq->head;
-    eq->head = event->next;                 // remove this event from the queue - ERROR HERE
+    eq->head = event->next;                 // remove this event from the queue
     if (event->join) {
         consumer->join = event->join;       // I will join on this
     }
     *data = event->data;
-    char special = event->special;
+    free(event);
     pthread_mutex_unlock(&eq->event_lock);  // unlock the event queue
-    return special;
+    return '\0';
 }
 
 void EventQueue_destroy_consumer(EventQueue_Consumer *consumer) {
