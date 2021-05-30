@@ -17,6 +17,7 @@ typedef struct {
 struct EventQueue_Event_internal {
     EventQueue_JoinHandle *join;  // may be NULL if joining isn't required
     void *data;
+    char special;  // '\0' for not special, 'K' for kill
     struct EventQueue_Event_internal *next;
 };
 
@@ -53,8 +54,8 @@ typedef struct {
 } EventQueue_Consumer;
 
 EventQueue_Consumer *EventQueue_new_consumer(EventQueue *eq);
-// Take the first event from an EventQueue and get the data, and tell joining adders that you're done.
-void *EventQueue_consume(EventQueue_Consumer *consumer);
+// Take the first event from an EventQueue and get the data, and tell joining adders that you're done. Returns a char for specials.
+char EventQueue_consume(EventQueue_Consumer *consumer, void **data);
 // Destroy the consumer, and tell any joining adders than you're done.
 void EventQueue_destroy_consumer(EventQueue_Consumer *consumer);
 

@@ -8,13 +8,16 @@ EventQueue *EventQueue_new() {
 }
 
 void EventQueue_free(EventQueue *eq) {
-    pthread_cond_destroy(&eq->new_event_ready);
+    printf("Destroying cond..\n");
+    pthread_cond_destroy(&eq->new_event_ready);  // TODO ERROR HERE!!!!
+    printf("Destroying mutex..\n");
     pthread_mutex_destroy(&eq->event_lock);
 }
 
 static void EventQueue_add_mayjoin(EventQueue *eq, struct EventQueue_Event_internal *event) {
     pthread_mutex_lock(&eq->event_lock);    // lock the event queue
-    if (eq->tail == NULL) {
+    pthread_cond_signal(&eq->new_event_ready);
+    if (eq->head == NULL || eq->tail == NULL) {
         eq->head = event;
         eq->tail = event;
     } else {
@@ -61,6 +64,7 @@ void EventQueue_join(EventQueue_JoinHandle *handle) {
         // I'm waiting...
         handle->state = 'W';
         pthread_cond_wait(&handle->cond, &handle->mutex);
+        pthread_mutex_unlock(&handle->mutex);
     }
 }
 
@@ -95,7 +99,7 @@ EventQueue_Consumer *EventQueue_new_consumer(EventQueue *eq) {
     return consumer;
 }
 
-void *EventQueue_consume(EventQueue_Consumer *consumer) {
+char EventQueue_consume(EventQueue_Consumer *consumer, void **data) {
     if (consumer->join != NULL) {
         EventQueue_event_done(consumer->join);
         consumer->join = NULL;
@@ -104,20 +108,20 @@ void *EventQueue_consume(EventQueue_Consumer *consumer) {
     // actually consume an event
     pthread_mutex_lock(&eq->event_lock);    // lock the event queue to wait for an event
     // if there's an event, take it now
-    while (eq->head != NULL) {
+    while (eq->head == NULL) {
         // wait for a new event
         pthread_cond_wait(&eq->new_event_ready, &eq->event_lock);
-        pthread_mutex_lock(&eq->event_lock);
     }
     // the event is eq->head
     struct EventQueue_Event_internal *event = eq->head;
-    eq->head = event->next;                 // remove this event from the queue
+    eq->head = event->next;                 // remove this event from the queue - ERROR HERE
     if (event->join) {
         consumer->join = event->join;       // I will join on this
     }
-    void *data = event->data;               // the data actually returned
+    *data = event->data;
+    char special = event->special;
     pthread_mutex_unlock(&eq->event_lock);  // unlock the event queue
-    return data;
+    return special;
 }
 
 void EventQueue_destroy_consumer(EventQueue_Consumer *consumer) {
